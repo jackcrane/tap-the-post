@@ -104,8 +104,7 @@ function App() {
     <div className="page">
       <header className="top-bar">
         <div className="brand">
-          <span className="brand-mark">tap-the-post</span>
-          <span className="domain">.com</span>
+          <img src="/logo.svg" alt="tap-the-post logo" className="brand-logo" />
         </div>
       </header>
 
