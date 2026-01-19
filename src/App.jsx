@@ -3,58 +3,85 @@ import './App.css'
 
 const GAP_PX = 12
 
-const readFileAsDataUrl = (file) =>
-  new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(reader.result)
-    reader.onerror = () => reject(new Error('Unable to read file'))
-    reader.readAsDataURL(file)
-  })
+const loadImageFromFile = async (file) => {
+  if (typeof createImageBitmap === 'function') {
+    try {
+      return await createImageBitmap(file)
+    } catch (_) {
+      // Fall through to Image-based decode
+    }
+  }
 
-const loadImage = (src) =>
-  new Promise((resolve, reject) => {
+  return new Promise((resolve, reject) => {
     const img = new Image()
-    img.onload = () => resolve(img)
-    img.onerror = () => reject(new Error('Unable to load image'))
-    img.src = src
+    const objectUrl = URL.createObjectURL(file)
+    img.onload = () => {
+      URL.revokeObjectURL(objectUrl)
+      resolve(img)
+    }
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl)
+      reject(new Error('Unable to load image'))
+    }
+    img.src = objectUrl
   })
+}
 
 const sliceImage = async (file) => {
-  const dataUrl = await readFileAsDataUrl(file)
-  const image = await loadImage(dataUrl)
+  let image
+  try {
+    image = await loadImageFromFile(file)
+  } catch (err) {
+    console.error('Image load failed', { err, file })
+    throw err
+  }
 
-  const adjustedHeight = image.height - GAP_PX * 3
-  const baseHeight = Math.floor(adjustedHeight / 4)
-  const heights = [baseHeight, baseHeight, baseHeight, adjustedHeight - baseHeight * 3]
+  const TRIM_PX = 6
+  const sliceHeight = image.height / 4
   const slices = []
 
-  let offsetY = 0
-  for (let i = 0; i < 4; i += 1) {
-    const sourceHeight = heights[i]
-    const canvas = document.createElement('canvas')
+  try {
+    for (let i = 0; i < 4; i += 1) {
+      const rawStart = Math.floor(i * sliceHeight) + TRIM_PX
+      const rawEnd = Math.ceil((i + 1) * sliceHeight) - TRIM_PX
 
-    canvas.width = image.width
-    canvas.height = sourceHeight
+      const startY = Math.max(0, Math.min(rawStart, image.height - 1))
+      let endY = Math.max(startY + 1, Math.min(rawEnd, image.height))
 
-    const ctx = canvas.getContext('2d')
-    ctx.drawImage(
-      image,
-      0,
-      offsetY,
-      image.width,
-      sourceHeight,
-      0,
-      0,
-      canvas.width,
-      canvas.height,
-    )
+      // If trim collapses the slice (very small images), fall back to untrimmed boundaries.
+      if (endY - startY < 1) {
+        const fallbackStart = Math.floor(i * sliceHeight)
+        const fallbackEnd = Math.min(image.height, Math.ceil((i + 1) * sliceHeight))
+        endY = Math.max(fallbackStart + 1, fallbackEnd)
+      }
 
-    slices.push(canvas.toDataURL('image/png'))
-    offsetY += sourceHeight + GAP_PX
+      const sourceHeight = endY - startY
+      const canvas = document.createElement('canvas')
+
+      canvas.width = image.width
+      canvas.height = sourceHeight
+
+      const ctx = canvas.getContext('2d')
+      ctx.drawImage(
+        image,
+        0,
+        startY,
+        image.width,
+        sourceHeight,
+        0,
+        0,
+        canvas.width,
+        canvas.height,
+      )
+
+      slices.push(canvas.toDataURL('image/png'))
+    }
+  } catch (err) {
+    console.error('Slice generation failed', { err, imageDims: { width: image.width, height: image.height } })
+    throw err
   }
 
   return {
-    source: dataUrl,
     slices,
   }
 }
@@ -76,6 +103,7 @@ function App() {
       setResult(output)
       setStep('preview')
     } catch (err) {
+      console.error('Failed to process image', { err, file })
       setError('Unable to process that image. Try a different file.')
     } finally {
       setIsProcessing(false)
