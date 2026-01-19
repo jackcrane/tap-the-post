@@ -289,6 +289,17 @@ function App() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [result, setResult] = useState(null);
 
+  const deriveFileParts = (fileName = "") => {
+    const lastDot = fileName.lastIndexOf(".");
+    if (lastDot <= 0 || lastDot === fileName.length - 1) {
+      return { baseName: fileName || "image", extension: "png" };
+    }
+    return {
+      baseName: fileName.slice(0, lastDot),
+      extension: fileName.slice(lastDot + 1),
+    };
+  };
+
   const handleFile = async (file) => {
     if (!file) return;
 
@@ -297,7 +308,8 @@ function App() {
 
     try {
       const output = await sliceImage(file);
-      setResult(output);
+      const { baseName, extension } = deriveFileParts(file.name);
+      setResult({ ...output, baseName, extension });
       setStep("preview");
     } catch (err) {
       console.error("Failed to process image", { err, file });
@@ -318,7 +330,9 @@ function App() {
     result.slices.forEach((src, index) => {
       const link = document.createElement("a");
       link.href = src;
-      link.download = `tap-the-post-segment-${index + 1}.png`;
+      const baseName = result.baseName || "image";
+      const extension = result.extension || "png";
+      link.download = `${index + 1}-${baseName}-tap-the-post.${extension}`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
